@@ -2,7 +2,7 @@
 #
 # Это единый связанный стек (общий жизненный цикл): imgproxy читает исходники
 # из MinIO, nginx кэширует ответы imgproxy. Всё хранилище вынесено в папку
-# file_storage/. См. dev_docks/microservices/Readme_kanban_to_do.txt, 8.7-8.9.
+# document_flow_file_storage/. См. README.md в корне репозитория.
 #
 # Назначение:
 #   - MinIO   — единое S3-хранилище файлов. Канбан-сервис (Go) — первый
@@ -34,8 +34,8 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?задайте MINIO_ROOT_USER в .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?задайте MINIO_ROOT_PASSWORD в .env}
     volumes:
       - ./../minio_data:/data
     ports:
@@ -56,19 +56,24 @@ services:
       # Сгенерировать: openssl rand -hex 32  (для каждого ключа)
       IMGPROXY_KEY: ${IMGPROXY_KEY:-}
       IMGPROXY_SALT: ${IMGPROXY_SALT:-}
-      # Если ключ/соль пустые — подпись отключена (ТОЛЬКО для локальной отладки).
-      IMGPROXY_ALLOW_UNSAFE_URL: ${IMGPROXY_ALLOW_UNSAFE_URL:-1}
+      # Пустые ключ/соль — imgproxy принимает любые ссылки, в том числе /unsafe/
+      # (только локальная отладка). С ключами ссылка без подписи получает 403;
+      # Symfony и kanban подписывают ссылки теми же IMGPROXY_KEY/IMGPROXY_SALT.
 
       # --- Источник исходников: MinIO (S3) ---
       IMGPROXY_USE_S3: "1"
       IMGPROXY_S3_ENDPOINT: "http://minio:9000"
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?задайте MINIO_ROOT_USER в .env}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?задайте MINIO_ROOT_PASSWORD в .env}
       IMGPROXY_S3_REGION: ${MINIO_REGION:-us-east-1}
 
-      # --- Прочее ---
       IMGPROXY_BIND: ":8080"
       IMGPROXY_MAX_SRC_RESOLUTION: ${IMGPROXY_MAX_SRC_RESOLUTION:-50}
+      # Источники — только MinIO: без этого при выключенной подписи imgproxy ходит
+      # по любому http(s)-адресу, в том числе во внутреннюю сеть (FS-SEC-1).
+      IMGPROXY_ALLOWED_SOURCES: ${IMGPROXY_ALLOWED_SOURCES:-s3://}
+      # Предел размера исходника, байт (50 МБ = лимит загрузки kanban) (FS-SEC-3).
+      IMGPROXY_MAX_SRC_FILE_SIZE: ${IMGPROXY_MAX_SRC_FILE_SIZE:-52428800}
       IMGPROXY_LOG_LEVEL: ${IMGPROXY_LOG_LEVEL:-info}
     # Порт наружу НЕ публикуем — доступ только через nginx-кэш.
     networks:
